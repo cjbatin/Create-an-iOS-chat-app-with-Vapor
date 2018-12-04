@@ -1,0 +1,177 @@
+import Foundation
+import PusherPlatform
+
+public final class PCBasicCurrentUser {
+    public let id: String
+    public let pathFriendlyID: String
+
+    let userStore: PCGlobalUserStore
+    let roomStore: PCRoomStore
+    let cursorStore: PCCursorStore
+
+    public internal(set) var userSubscription: PCUserSubscription?
+    public internal(set) var presenceSubscription: PCPresenceSubscription?
+    public internal(set) var cursorSubscription: PCCursorSubscription?
+
+    let instance: Instance
+    let filesInstance: Instance
+    let cursorsInstance: Instance
+    let presenceInstance: Instance
+    let delegate: PCChatManagerDelegate
+
+    let connectionCoordinator: PCConnectionCoordinator
+
+    public init(
+        id: String,
+        pathFriendlyID: String,
+        instance: Instance,
+        filesInstance: Instance,
+        cursorsInstance: Instance,
+        presenceInstance: Instance,
+        connectionCoordinator: PCConnectionCoordinator,
+        delegate: PCChatManagerDelegate
+    ) {
+        self.id = id
+        self.pathFriendlyID = pathFriendlyID
+        self.instance = instance
+        self.filesInstance = filesInstance
+        self.cursorsInstance = cursorsInstance
+        self.presenceInstance = presenceInstance
+        self.connectionCoordinator = connectionCoordinator
+        self.delegate = delegate
+
+        let rooms = PCSynchronizedArray<PCRoom>()
+        self.userStore = PCGlobalUserStore(instance: instance)
+        self.roomStore = PCRoomStore(rooms: rooms, instance: instance)
+        self.cursorStore = PCCursorStore(
+            instance: instance,
+            roomStore: roomStore,
+            userStore: userStore
+        )
+    }
+
+    func establishUserSubscription(
+        initialStateHandler: @escaping ((roomsPayload: [[String: Any]], currentUserPayload: [String: Any])) -> Void
+    ) {
+        let path = "/users"
+        let subscribeRequest = PPRequestOptions(method: HTTPMethod.SUBSCRIBE.rawValue, path: path)
+
+        var resumableSub = PPResumableSubscription(
+            instance: self.instance,
+            requestOptions: subscribeRequest
+        )
+
+        let userSub = PCUserSubscription(
+            instance: self.instance,
+            filesInstance: self.filesInstance,
+            cursorsInstance: self.cursorsInstance,
+            presenceInstance: self.presenceInstance,
+            resumableSubscription: resumableSub,
+            userStore: self.userStore,
+            delegate: self.delegate,
+            userID: id,
+            pathFriendlyUserID: pathFriendlyID,
+            connectionCoordinator: connectionCoordinator,
+            initialStateHandler: initialStateHandler
+        )
+
+        self.userSubscription = userSub
+
+        // TODO: Decide what to do with onEnd
+        self.instance.subscribeWithResume(
+            with: &resumableSub,
+            using: subscribeRequest,
+            onEvent: { [unowned userSub] eventID, headers, data in
+                userSub.handleEvent(eventID: eventID, headers: headers, data: data)
+            },
+            onEnd: { _, _, _ in },
+            onError: { [unowned self] error in
+                self.connectionCoordinator.connectionEventCompleted(
+                    PCConnectionEvent(currentUser: nil, error: error)
+                )
+            }
+        )
+    }
+
+    func establishPresenceSubscription() {
+        // If a presenceSubscription already exists then we want to create a new one
+        // so we first close the existing subscription, if it was still open
+        if let presSub = self.presenceSubscription {
+            presSub.end()
+            self.presenceSubscription = nil
+        }
+
+        let path = "/users/\(self.pathFriendlyID)/register"
+        let subscribeRequest = PPRequestOptions(method: HTTPMethod.SUBSCRIBE.rawValue, path: path)
+
+        var resumableSub = PPResumableSubscription(
+            instance: self.presenceInstance,
+            requestOptions: subscribeRequest
+        )
+
+        let presenceSub = PCPresenceSubscription(resumableSubscription: resumableSub)
+        self.presenceSubscription = presenceSub
+
+        self.presenceInstance.subscribeWithResume(
+            with: &resumableSub,
+            using: subscribeRequest,
+            onOpen: { [unowned self, unowned presenceSub] in
+                self.connectionCoordinator.connectionEventCompleted(
+                    PCConnectionEvent(presenceSubscription: presenceSub, error: nil)
+                )
+            },
+            onError: { [unowned self] error in
+                self.connectionCoordinator.connectionEventCompleted(
+                    PCConnectionEvent(presenceSubscription: nil, error: error)
+                )
+            }
+        )
+    }
+
+    func establishCursorSubscription() {
+        let userCursorSubscriptionPath = "/cursors/\(PCCursorType.read.rawValue)/users/\(self.pathFriendlyID)"
+        let cursorSubscriptionRequestOptions = PPRequestOptions(
+            method: HTTPMethod.SUBSCRIBE.rawValue,
+            path: userCursorSubscriptionPath
+        )
+
+        var cursorResumableSub = PPResumableSubscription(
+            instance: self.cursorsInstance,
+            requestOptions: cursorSubscriptionRequestOptions
+        )
+
+        let cursorSub = PCCursorSubscription(
+            resumableSubscription: cursorResumableSub,
+            cursorStore: cursorStore,
+            connectionCoordinator: self.connectionCoordinator,
+            logger: self.cursorsInstance.logger,
+            initialStateHandler: { [unowned self] err in
+                if let err = err {
+                    self.cursorsInstance.logger.log(err.localizedDescription, logLevel: .debug)
+                }
+                // TODO: Should the connection coordinator get the error here?
+                // Do we care if a single (in this weird case, only the last to be received)
+                // basic cursor can't be enriched with information about its room and/or user?
+                // We probably just want to log something
+                self.connectionCoordinator.connectionEventCompleted(
+                    PCConnectionEvent(cursorSubscription: self.cursorSubscription, error: nil)
+                )
+            }
+        )
+
+        self.cursorSubscription = cursorSub
+
+        self.cursorsInstance.subscribeWithResume(
+            with: &cursorResumableSub,
+            using: cursorSubscriptionRequestOptions,
+            onEvent: { [unowned cursorSub] eventID, headers, data in
+                cursorSub.handleEvent(eventID: eventID, headers: headers, data: data)
+            },
+            onError: { [unowned self] error in
+                self.connectionCoordinator.connectionEventCompleted(
+                    PCConnectionEvent(cursorSubscription: nil, error: error)
+                )
+            }
+        )
+    }
+}
