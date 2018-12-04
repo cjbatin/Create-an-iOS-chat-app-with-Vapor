@@ -28,5 +28,5 @@ Clone or download the repo onto your machine and open it using the command:
 * PerfectCrypto - https://github.com/PerfectlySoft/Perfect-Crypto
 
 ### Built with
-Vapor 3.0
-Swift Package Manager
+* Vapor 3.0
+* Swift Package Manager
