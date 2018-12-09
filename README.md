@@ -1,8 +1,8 @@
 # Create an iOS chat app with Vapor - iOS
 
-An example project that accompanies my tutorial on using Getting started with vapor and pusher beams.
-Tutorial: https://pusher.com/tutorials/vapor-push-notifications
-
+An example project that accompanies my tutorial on using Getting started with vapor and Chatkit.
+Tutorial Part 1: https://pusher.com/tutorials/ios-chat-vapor-part-1
+Tutorial Part 2: https://pusher.com/tutorials/ios-chat-vapor-part-2
 ## Getting Started
 
 iOS - Clone or download the repo onto your machine.
