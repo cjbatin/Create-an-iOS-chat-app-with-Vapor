@@ -14,7 +14,7 @@ final class AuthController {
     // Creates a JWT token lasting 15 mins
     static func createJWToken() -> String {
         let timeStamp = Int(Date.init().timeIntervalSince1970)
-        let tstPayload = ["instance": "1848b958-7926-4708-8959-aad6ca8cfdd9",
+        let tstPayload = ["instance": "YOUR_INSTANCE_ID",
                           "iss": "api_keys/40c9f2ad-51db-4c72-8e64-6dd575ab951c",
                           "exp": timeStamp + (15 * 60),
                           "iat": timeStamp,
