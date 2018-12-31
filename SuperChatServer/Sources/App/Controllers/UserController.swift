@@ -19,7 +19,7 @@ final class UserController {
 
     func create(_ req: Request) throws -> Future<User> {
         return try req.content.decode(User.self).flatMap { user in
-            let chatkitEndPoint = "https://us1.pusherplatform.io/services/chatkit/v2/1848b958-7926-4708-8959-aad6ca8cfdd9/users"
+            let chatkitEndPoint = "https://us1.pusherplatform.io/services/chatkit/v2/YOUR_INSTANCE_ID/users"
             guard let url = URL(string: chatkitEndPoint) else {
                 throw Abort.init(HTTPResponseStatus.internalServerError)
             }
